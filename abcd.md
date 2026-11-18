@@ -12,7 +12,7 @@
    ```
    *(Open `http://localhost:4040` $\rightarrow$ **Stages** tab. Notice `key = 0` is split evenly across 8 deterministic salt buckets `col("id") % 8`, eliminating the single-task bottleneck.)*
 
-### File 1: `skew.py`
+### File 1: `skew.py` in pycharm 
 ```python
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
@@ -35,7 +35,7 @@ time.sleep(120)
 spark.stop()
 ```
 
-### File 2: `fix.py`
+### File 2: `fix.py` in pycharm 
 ```python
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
