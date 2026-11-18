@@ -1,10 +1,3 @@
-# Big Data Analytics & Stream Processing — Simplified Practicals (P1 to P10)
-
-**Student:** Yash Hingu (`31011123021` — LYCS)  
-**All ready-to-run files saved at:** `C:\Users\Admin\.gemini\antigravity\scratch\bd_practicals_simplified\`
-
----
-
 ## P1: Spark Optimization — Data Skew & Salting Fix (`skew.py` & `fix.py`)
 
 ### Step-by-Step Commands
