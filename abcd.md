@@ -1,18 +1,38 @@
+
+
+> [!IMPORTANT]
+> **One-Time Environment Setup for Any New PowerShell Terminal on This PC:**  
+> Your PC has both Python 3.13 (Miniconda) and Python 3.11, as well as Java 23 and Java 17 (`C:\Tools\jdk-17`). Because PySpark 3.5, Delta Lake 3.2, and PyFlink 1.19 require **Python 3.11** and **Java 17**, paste these 4 lines at the start of your PowerShell terminal session (all tools and libraries are already installed on your machine!):
+> ```powershell
+> $env:JAVA_HOME="C:\Tools\jdk-17"
+> $env:HADOOP_HOME="C:\hadoop"
+> $env:PYSPARK_PYTHON="C:\Users\Admin\AppData\Local\Programs\Python\Python311\python.exe"
+> $env:PATH="C:\Tools\jdk-17\bin;C:\Tools\apache-maven\bin;C:\Tools\sbt\bin;C:\hadoop\bin;C:\Users\Admin\AppData\Local\Programs\Python\Python311;C:\Users\Admin\AppData\Local\Programs\Python\Python311\Scripts;$env:PATH"
+> ```
+
+---
+
 ## P1: Spark Optimization — Data Skew & Salting Fix (`skew.py` & `fix.py`)
 
-### Step-by-Step Commands
-1. **Run the skewed job first and inspect the Spark UI:**
-   ```powershell
-   python skew.py
-   ```
-   *(Open `http://localhost:4040` $\rightarrow$ **Jobs / Stages** tab while it pauses for 120 seconds. Notice 4,500,000 rows have `key = 0`, causing 1 partition to handle 90% of the shuffle data.)*
-2. **Run the salted fix job and compare in the Spark UI:**
-   ```powershell
-   python fix.py
-   ```
-   *(Open `http://localhost:4040` $\rightarrow$ **Stages** tab. Notice `key = 0` is split evenly across 8 deterministic salt buckets `col("id") % 8`, eliminating the single-task bottleneck.)*
+**Aim:** Implement a Spark job and use the Spark UI to identify and fix data skew and "shuffle" bottlenecks.
 
-### File 1: `skew.py` in pycharm 
+### Step-by-Step Setup & Verified Commands
+
+**Step 1: Set environment and navigate to folder**
+```powershell
+$env:JAVA_HOME="C:\Tools\jdk-17"; $env:HADOOP_HOME="C:\hadoop"; $env:PYSPARK_PYTHON="C:\Users\Admin\AppData\Local\Programs\Python\Python311\python.exe"
+$env:PATH="C:\Tools\jdk-17\bin;C:\hadoop\bin;C:\Users\Admin\AppData\Local\Programs\Python\Python311;C:\Users\Admin\AppData\Local\Programs\Python\Python311\Scripts;$env:PATH"
+mkdir P1_Spark_Skew -Force
+cd P1_Spark_Skew
+```
+
+**Step 2: Install PySpark (already installed in Python 3.11)**
+```powershell
+python -m pip install pyspark==3.5.3
+python -c "import pyspark; print(pyspark.__version__)"
+```
+
+**Step 3: Create `skew.py` (Demonstrates 90% data skew on `key = 0`)**
 ```python
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
@@ -35,7 +55,7 @@ time.sleep(120)
 spark.stop()
 ```
 
-### File 2: `fix.py` in pycharm 
+**Step 4: Create `fix.py` (Fixes skew by salting `key = 0` across 8 buckets)**
 ```python
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import *
@@ -57,21 +77,56 @@ time.sleep(120)
 spark.stop()
 ```
 
+**Step 5: Run `skew.py` and inspect Spark UI**
+```powershell
+python skew.py
+```
+*(While it pauses for 120 seconds, open `http://localhost:4040` $\rightarrow$ **Jobs / Stages** tab to observe 1 skewed task processing 4,500,000 rows.)*
+
+**Step 6: Run `fix.py` and compare in Spark UI**
+```powershell
+python fix.py
+```
+*(Open `http://localhost:4040` $\rightarrow$ **Stages** tab to see the salted shuffle distribute `key = 0` across all 8 partitions.)*
+
+**Verified Output:**
+```text
++---+-------+
+|key|  count|
++---+-------+
+|  0|4500000|
+|517|    501|
+|518|    501|
+...
++---+-------+
+Open Spark UI: http://localhost:4040
+```
+
 ---
 
-## P2: Data Lakehouse — Delta Lake Time Travel & ACID (1 File)
+## P2: Data Lakehouse — Delta Lake Time Travel & ACID (`delta_demo.py`)
 
-### Step-by-Step Commands (with Windows `HADOOP_HOME` Fix)
-Run these commands once in PowerShell so Windows doesn't throw `HADOOP_HOME unset`:
+**Aim:** Create a Delta Lake table and demonstrate "Time Travel" and "ACID Transactions" on Spark.
+
+### Step-by-Step Setup & Verified Commands
+
+**Step 1: Set environment and install `pyspark` & `delta-spark`**
+```powershell
+$env:JAVA_HOME="C:\Tools\jdk-17"; $env:HADOOP_HOME="C:\hadoop"; $env:PYSPARK_PYTHON="C:\Users\Admin\AppData\Local\Programs\Python\Python311\python.exe"
+$env:PATH="C:\Tools\jdk-17\bin;C:\hadoop\bin;C:\Users\Admin\AppData\Local\Programs\Python\Python311;C:\Users\Admin\AppData\Local\Programs\Python\Python311\Scripts;$env:PATH"
+mkdir P2_Delta_Lake -Force
+cd P2_Delta_Lake
+python -m pip install pyspark==3.5.3 delta-spark==3.2.1
+```
+
+**Step 2: Configure Windows Hadoop binaries (`winutils.exe` & `hadoop.dll` — already downloaded to `C:\hadoop\bin`)**
 ```powershell
 mkdir C:\hadoop\bin -Force
 curl.exe -L -o C:\hadoop\bin\winutils.exe https://raw.githubusercontent.com/cdarlint/winutils/master/hadoop-3.3.5/bin/winutils.exe
 curl.exe -L -o C:\hadoop\bin\hadoop.dll https://raw.githubusercontent.com/cdarlint/winutils/master/hadoop-3.3.5/bin/hadoop.dll
-pip install pyspark delta-spark
-python delta_demo.py
 ```
 
-### `delta_demo.py`
+**Step 3: Create `delta_demo.py`**
 ```python
 import os, shutil
 os.environ["HADOOP_HOME"] = r"C:\hadoop"
@@ -102,31 +157,52 @@ except Exception as e:
     print("Rejected:", type(e).__name__)
 ```
 
+**Step 4: Run the Delta Lake script**
+```powershell
+python delta_demo.py
+```
+
+**Verified Output:**
+```text
++-------+---------+
+|version|operation|
++-------+---------+
+|      2|   DELETE|
+|      1|   UPDATE|
+|      0|    WRITE|
++-------+---------+
++---+--------+-----+
+| id|    name|marks|
++---+--------+-----+
+|  1|Siddhant|   90|
+|  2|  Shreya|   88|
+|  3|  Shruti|   75|
++---+--------+-----+
+Rejected: AnalysisException
+```
+
 ---
 
 ## P3: 3-Broker Kafka Cluster in Docker + Producer/Consumer
 
-### Step-by-Step Commands
-1. **Start the 3-broker Kafka cluster:**
-   ```powershell
-   docker compose up -d
-   docker ps
-   ```
-   *(If old containers conflict, run `docker rm -f kafka1 kafka2 kafka3` and then `docker compose up -d`.)*
-2. **Install Python Kafka client:**
-   ```powershell
-   pip install kafka-python
-   ```
-3. **Run Consumer in Terminal 1 and Producer in Terminal 2:**
-   ```powershell
-   # Terminal 1:
-   python consumer.py
+**Aim:** Set up a 3-broker Kafka cluster using Docker and implement a Producer/Consumer in Python.
 
-   # Terminal 2:
-   python producer.py
-   ```
+### Step-by-Step Setup & Verified Commands
 
-### File 1: `docker-compose.yml`
+**Step 1: Ensure Docker Desktop is running and create project folder**
+```powershell
+$env:PATH="C:\Users\Admin\AppData\Local\Programs\Python\Python311;C:\Users\Admin\AppData\Local\Programs\Python\Python311\Scripts;$env:PATH"
+mkdir P3_Kafka_Cluster -Force
+cd P3_Kafka_Cluster
+docker --version
+```
+
+**Step 2: Install Python Kafka client library (`kafka-python`)**
+```powershell
+python -m pip install kafka-python
+```
+
+**Step 3: Create `docker-compose.yml`**
 ```yaml
 
 services:
@@ -196,7 +272,7 @@ volumes:
   kafka3_data:
 ```
 
-### File 2: `producer.py`
+**Step 4: Create `producer.py`**
 ```python
 from kafka import KafkaProducer
 import json, time
@@ -217,7 +293,7 @@ producer.flush()
 producer.close()
 ```
 
-### File 3: `consumer.py`
+**Step 5: Create `consumer.py`**
 ```python
 from kafka import KafkaConsumer
 import json
@@ -236,21 +312,45 @@ for msg in consumer:
     print("Received:", msg.value)
 ```
 
+**Step 6: Start the 3-broker Kafka cluster in Docker**
+```powershell
+docker rm -f kafka1 kafka2 kafka3
+docker compose up -d
+docker ps
+```
+
+**Step 7: Run Consumer (Terminal 1) and Producer (Terminal 2)**
+```powershell
+# In Terminal 1:
+python consumer.py
+
+# In Terminal 2:
+python producer.py
+```
+
+**Step 8: Stop containers when done**
+```powershell
+docker compose down -v
+```
+
 ---
 
 ## P4: Kafka Schema Registry — Backward Compatibility
 
-### Step-by-Step Commands
+**Aim:** Use Kafka Schema Registry to demonstrate a "Backward Compatible" schema change.
+
+### Step-by-Step Setup & Verified Commands
+
+**Step 1: Create project folder and install Confluent Avro & Schema Registry Python extras**
+*(Note: Installing `"confluent-kafka[avro,schemaregistry]"` includes `authlib` and `httpx` required by `SchemaRegistryClient`)*
 ```powershell
-docker compose up -d
-pip install confluent-kafka fastavro requests
-python producer.py 1
-curl.exe -X PUT -H "Content-Type: application/vnd.schemaregistry.v1+json" --data "{\"compatibility\":\"BACKWARD\"}" http://localhost:8081/config/healthcare-patients-value
-python producer.py 2
-python consumer.py
+$env:PATH="C:\Users\Admin\AppData\Local\Programs\Python\Python311;C:\Users\Admin\AppData\Local\Programs\Python\Python311\Scripts;$env:PATH"
+mkdir P4_Schema_Registry -Force
+cd P4_Schema_Registry
+python -m pip install "confluent-kafka[avro,schemaregistry]" fastavro requests
 ```
 
-### `docker-compose.yml`
+**Step 2: Create `docker-compose.yml`**
 ```yaml
 services:
   kafka:
@@ -277,7 +377,7 @@ services:
       SCHEMA_REGISTRY_LISTENERS: http://0.0.0.0:8081
 ```
 
-### `producer.py`
+**Step 3: Create `producer.py` (Handles both Schema V1 and Schema V2)**
 ```python
 import sys
 from confluent_kafka import SerializingProducer
@@ -300,7 +400,7 @@ for r in recs:
 p.flush()
 ```
 
-### `consumer.py`
+**Step 4: Create `consumer.py`**
 ```python
 from confluent_kafka import DeserializingConsumer
 from confluent_kafka.serialization import StringDeserializer
@@ -316,21 +416,61 @@ while True:
     if m and not m.error(): print("Received:", m.value())
 ```
 
+**Step 5: Start Kafka and Schema Registry containers**
+```powershell
+docker compose up -d
+# Wait ~10 seconds, then verify Schema Registry returns []:
+curl.exe http://localhost:8081/subjects
+```
+
+**Step 6: Produce V1 data, set `BACKWARD` compatibility, and produce V2 data**
+```powershell
+python producer.py 1
+Invoke-RestMethod -Method Put -Uri "http://localhost:8081/config/healthcare-patients-value" -ContentType "application/vnd.schemaregistry.v1+json" -Body '{"compatibility":"BACKWARD"}'
+python producer.py 2
+curl.exe http://localhost:8081/subjects/healthcare-patients-value/versions
+```
+
+**Step 7: Run Consumer to read both V1 and V2 messages**
+```powershell
+python consumer.py
+```
+
+**Verified Output:**
+```text
+Produced V1 {'patient_id': 101, 'patient_name': 'Rahul', 'age': 35}
+Produced V1 {'patient_id': 102, 'patient_name': 'Priya', 'age': 28}
+compatibility: BACKWARD
+Produced V2 {'patient_id': 103, 'patient_name': 'Amit', 'age': 42, 'blood_group': 'A+'}
+[1,2]
+Received: {'patient_id': 101, 'patient_name': 'Rahul', 'age': 35}
+Received: {'patient_id': 102, 'patient_name': 'Priya', 'age': 28}
+Received: {'patient_id': 103, 'patient_name': 'Amit', 'age': 42, 'blood_group': 'A+'}
+```
+
+**Step 8: Stop containers when done**
+```powershell
+docker compose down -v
+```
+
 ---
 
 ## P5: Spark Structured Streaming — Live Socket Word Count
 
-### Step-by-Step Commands
+**Aim:** Build a Spark Structured Streaming app to count word frequencies from a live socket stream.
+
+### Step-by-Step Setup & Verified Commands
+
+**Step 1: Set environment and navigate to folder**
 ```powershell
-# Terminal 1 (Start socket server first):
-python socket_sender.py
-
-# Terminal 2 (Start Spark streaming job):
-python word_count_stream.py
+$env:JAVA_HOME="C:\Tools\jdk-17"; $env:HADOOP_HOME="C:\hadoop"; $env:PYSPARK_PYTHON="C:\Users\Admin\AppData\Local\Programs\Python\Python311\python.exe"
+$env:PATH="C:\Tools\jdk-17\bin;C:\hadoop\bin;C:\Users\Admin\AppData\Local\Programs\Python\Python311;C:\Users\Admin\AppData\Local\Programs\Python\Python311\Scripts;$env:PATH"
+mkdir P5_Word_Count_Stream -Force
+cd P5_Word_Count_Stream
+python -m pip install pyspark==3.5.3
 ```
-*(Type `hello spark hello python hello spark` in Terminal 1 and press Enter.)*
 
-### `socket_sender.py`
+**Step 2: Create `socket_sender.py`**
 ```python
 import socket
 s = socket.socket(); s.bind(("localhost", 9999)); s.listen(1)
@@ -341,27 +481,63 @@ while (m := input("Enter: ")) != "exit":
 c.close()
 ```
 
-### `word_count_stream.py`
+**Step 3: Create `word_count_stream.py`**
+*(Includes `.config("spark.sql.shuffle.partitions","2")` so each micro-batch runs 2 tasks in `<1 second` instead of 200 tasks)*
 ```python
 from pyspark.sql import SparkSession
 from pyspark.sql.functions import explode, split
-spark = SparkSession.builder.master("local[2]").appName("WC").getOrCreate()
+spark = SparkSession.builder.master("local[2]").appName("WC").config("spark.sql.shuffle.partitions","2").getOrCreate()
 spark.sparkContext.setLogLevel("ERROR")
 d = spark.readStream.format("socket").option("host","localhost").option("port",9999).load()
 c = d.select(explode(split("value", " ")).alias("word")).groupBy("word").count()
 c.writeStream.outputMode("complete").format("console").start().awaitTermination()
 ```
 
+**Step 4: Run Socket Sender in Terminal 1**
+```powershell
+python socket_sender.py
+```
+
+**Step 5: Run Spark Structured Streaming in Terminal 2**
+```powershell
+python word_count_stream.py
+```
+
+**Step 6: Type text in Terminal 1 (`hello spark hello python hello spark`)**
+
+**Verified Output (Terminal 2):**
+```text
+-------------------------------------------
+Batch: 1
+-------------------------------------------
++------+-----+
+|  word|count|
++------+-----+
+| hello|    3|
+|python|    1|
+| spark|    2|
++------+-----+
+```
+
 ---
 
 ## P6: Flink State Lab — Fraudulent Transactions (`KeyedProcessFunction`)
+download java and maven if not installed in computer 
+**Aim:** Implement a Flink application that detects "Fraudulent Transactions" (two large transactions within 1 minute) using `KeyedProcessFunction`.
 
-### Step-by-Step Commands
+### Step-by-Step Setup & Verified Commands
+
+**Step 1: Set Java 17 & Maven environment and create project folder**
 ```powershell
-mvn compile exec:java -Dexec.mainClass="FraudDetectionJob"
+$env:JAVA_HOME="C:\Tools\jdk-17"
+$env:PATH="C:\Tools\jdk-17\bin;C:\Tools\apache-maven\bin;$env:PATH"
+mkdir P6_Flink_Fraud -Force
+cd P6_Flink_Fraud
+java -version
+mvn -version
 ```
 
-### `pom.xml`
+**Step 2: Create `pom.xml` in `P6_Flink_Fraud\`**
 ```xml
 <project xmlns="http://maven.apache.org/POM/4.0.0">
   <modelVersion>4.0.0</modelVersion>
@@ -375,7 +551,7 @@ mvn compile exec:java -Dexec.mainClass="FraudDetectionJob"
 </project>
 ```
 
-### `FraudDetectionJob.java`
+**Step 3: Create `FraudDetectionJob.java` in the same folder (`P6_Flink_Fraud\`)**
 ```java
 import org.apache.flink.api.common.state.*;
 import org.apache.flink.api.common.typeinfo.Types;
@@ -396,10 +572,10 @@ public class FraudDetectionJob {
       last = getRuntimeContext().getState(new ValueStateDescriptor<>("last", Types.LONG));
     }
     public void processElement(Tx t, Context ctx, Collector<String> out) throws Exception {
-      if (t.amt < 10000) return;                       // only large transactions (>= 10,000)
+      if (t.amt < 10000) return;                       // only large transactions
       Long p = last.value();
-      if (p != null && t.ts - p <= 60000)              // two large transactions within 60s
-        out.collect("FRAUD ALERT: Customer=" + t.id + ", gap=" + (t.ts - p) / 1000 + " s");
+      if (p != null && t.ts - p <= 60000)              // two large within 1 minute
+        out.collect("FRAUD ALERT: " + t.id + ", gap=" + (t.ts - p) / 1000 + " s");
       last.update(t.ts);
     }
   }
@@ -414,17 +590,35 @@ public class FraudDetectionJob {
 }
 ```
 
+**Step 4: Compile and execute in a forked JVM via Maven**
+```powershell
+mvn -q compile exec:exec "-Dexec.executable=java" "-Dexec.args=-cp %classpath FraudDetectionJob"
+```
+
+**Verified Output:**
+```text
+14> FRAUD ALERT: C101, gap=35 s
+14> FRAUD ALERT: C101, gap=45 s
+```
+
 ---
 
 ## P7: Watermark Handling & Late Data (PyFlink — 1 File)
 
-### Step-by-Step Commands
+**Aim:** Create a stream processor that correctly handles "Late Data" using watermarks and side outputs.
+
+### Step-by-Step Setup & Verified Commands
+
+**Step 1: Set Java 17 & Python 3.11 environment and install `apache-flink`**
 ```powershell
-python -m pip install apache-flink
-python latedata.py
+$env:JAVA_HOME="C:\Tools\jdk-17"
+$env:PATH="C:\Tools\jdk-17\bin;C:\Users\Admin\AppData\Local\Programs\Python\Python311;C:\Users\Admin\AppData\Local\Programs\Python\Python311\Scripts;$env:PATH"
+mkdir P7_Late_Data -Force
+cd P7_Late_Data
+python -m pip install apache-flink==1.19.1
 ```
 
-### `latedata.py`
+**Step 2: Create `latedata.py`**
 ```python
 from pyflink.common import Types
 from pyflink.datastream import StreamExecutionEnvironment, ProcessFunction
@@ -454,16 +648,38 @@ m.get_side_output(late_tag).print()
 env.execute("late")
 ```
 
+**Step 3: Run the script**
+```powershell
+python latedata.py
+```
+
+**Verified Output:**
+```text
+MAIN: ('Picked up', 1000)
+MAIN: ('At restaurant', 8000)
+MAIN: ('Delivered', 22000)
+LATE: ('Order confirmed', 3000)
+```
+
 ---
 
 ## P8: Spark GraphX PageRank (Scala + SBT)
 
-### Step-by-Step Commands
+**Aim:** Use Spark GraphX to analyze a social network dataset and find the "Most Influential" nodes using PageRank.
+
+### Step-by-Step Setup & Verified Commands
+
+**Step 1: Set Java 17 & SBT environment and create directories**
 ```powershell
-sbt run
+$env:JAVA_HOME="C:\Tools\jdk-17"
+$env:HADOOP_HOME="C:\hadoop"
+$env:PATH="C:\Tools\jdk-17\bin;C:\Tools\sbt\bin;C:\hadoop\bin;$env:PATH"
+mkdir P8_GraphX\src\main\scala -Force
+mkdir P8_GraphX\data -Force
+cd P8_GraphX
 ```
 
-### `build.sbt`
+**Step 2: Create `build.sbt` in `P8_GraphX\build.sbt`**
 ```scala
 name := "GraphXPageRank"
 scalaVersion := "2.12.18"
@@ -474,7 +690,7 @@ javaOptions ++= Seq("java.lang","java.lang.invoke","java.lang.reflect","java.io"
   .map(p => s"--add-opens=java.base/$p=ALL-UNNAMED")
 ```
 
-### `data/vertices.csv`
+**Step 3: Create `data\vertices.csv`**
 ```csv
 id,name
 1,Alice
@@ -485,7 +701,7 @@ id,name
 6,Frank
 ```
 
-### `data/edges.csv`
+**Step 4: Create `data\edges.csv`**
 ```csv
 src,dst
 1,2
@@ -497,7 +713,7 @@ src,dst
 6,2
 ```
 
-### `src/main/scala/GraphXPageRank.scala`
+**Step 5: Create `src\main\scala\GraphXPageRank.scala`**
 ```scala
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.graphx._
@@ -520,18 +736,40 @@ object GraphXPageRank {
 }
 ```
 
+**Step 6: Run with SBT**
+```powershell
+sbt run
+```
+
+**Verified Output:**
+```text
+[info] Users: 6, Relationships: 7
+[info] (Charlie,2.1232774588227703)
+[info] (Alice,1.9547208520626864)
+[info] (Bob,1.3443056411388237)
+[info] (David,0.27759420487145)
+[info] (Frank,0.15005092155213512)
+[info] (Emma,0.15005092155213512)
+[info] Most influential: (Charlie,2.1232774588227703)
+[success]
+```
+
 ---
 
 ## P9: Distributed SQL with Trino (MySQL + TPC-H Federated Join)
 
-### Step-by-Step Commands
+**Aim:** Set up a Trino (Presto) coordinator and query data across two different sources simultaneously.
+
+### Step-by-Step Setup & Verified Commands
+
+**Step 1: Create project folders (`mysql` and `etc\catalog`)**
 ```powershell
-docker compose up -d
-# Wait ~15 seconds for MySQL & Trino to initialize, then run the cross-source query:
-docker exec -it trino_coordinator trino --execute "SELECT s.student_name, s.department, n.name AS nation FROM mysql.university.students s JOIN tpch.tiny.nation n ON s.student_id - 100 = n.nationkey;"
+mkdir P9_Trino\mysql -Force
+mkdir P9_Trino\etc\catalog -Force
+cd P9_Trino
 ```
 
-### `docker-compose.yml`
+**Step 2: Create `docker-compose.yml` (Uses host port `8085:8080` to avoid Windows port `8080` conflicts)**
 ```yaml
 services:
   mysql:
@@ -543,18 +781,18 @@ services:
   trino:
     image: trinodb/trino:latest
     container_name: trino_coordinator
-    ports: ["8080:8080"]
+    ports: ["8085:8080"]
     volumes: ["./etc/catalog:/etc/trino/catalog"]
     depends_on: [mysql]
 ```
 
-### `mysql/init.sql`
+**Step 3: Create `mysql\init.sql`**
 ```sql
 CREATE TABLE university.students (student_id INT PRIMARY KEY, student_name VARCHAR(100), department VARCHAR(100));
 INSERT INTO university.students VALUES (101,'Aarav','Data Science'),(102,'Diya','Computer Science'),(103,'Rohan','Data Science'),(104,'Meera','Computer Science');
 ```
 
-### `etc/catalog/mysql.properties`
+**Step 4: Create `etc\catalog\mysql.properties`**
 ```ini
 connector.name=mysql
 connection-url=jdbc:mysql://mysql:3306
@@ -562,24 +800,47 @@ connection-user=root
 connection-password=root123
 ```
 
-### `etc/catalog/tpch.properties`
+**Step 5: Create `etc\catalog\tpch.properties` (Second data source)**
 ```ini
 connector.name=tpch
+```
+
+**Step 6: Start containers and execute the cross-source federated JOIN**
+```powershell
+docker rm -f trino_mysql trino_coordinator
+docker compose up -d
+# Wait ~15 seconds, then run:
+docker exec -it trino_coordinator trino --execute "SELECT s.student_name, s.department, n.name AS nation FROM mysql.university.students s JOIN tpch.tiny.nation n ON s.student_id - 100 = n.nationkey;"
+```
+
+**Verified Output:**
+```text
+"Aarav","Data Science","ARGENTINA"
+"Diya","Computer Science","BRAZIL"
+"Rohan","Data Science","CANADA"
+"Meera","Computer Science","EGYPT"
+```
+
+**Step 7: Stop containers when done**
+```powershell
+docker compose down -v
 ```
 
 ---
 
 ## P10: Real-Time Dashboard — Kafka $\rightarrow$ ClickHouse $\rightarrow$ Grafana (3 Files Only)
 
-### Step-by-Step Commands
+**Aim:** Integrate a Kafka stream with an OLAP engine (ClickHouse) and visualize the data on a Grafana Dashboard.
+
+### Step-by-Step Setup & Verified Commands
+
+**Step 1: Create project folder**
 ```powershell
-docker compose up -d
-docker compose logs -f consumer
-# Verify rows inside ClickHouse:
-docker compose exec clickhouse clickhouse-client --password prac123 --query "SELECT * FROM default.air_quality LIMIT 10"
+mkdir P10_ClickHouse_Grafana -Force
+cd P10_ClickHouse_Grafana
 ```
 
-### `docker-compose.yml`
+**Step 2: Create `docker-compose.yml`**
 ```yaml
 services:
   kafka:
@@ -621,7 +882,7 @@ services:
     depends_on: [kafka, clickhouse]
 ```
 
-### `producer.py`
+**Step 3: Create `producer.py`**
 ```python
 import json, random, time
 from datetime import datetime, timezone
@@ -635,7 +896,7 @@ while True:
     p.send("air_quality", r); print("Sent:", r, flush=True); time.sleep(2)
 ```
 
-### `consumer.py`
+**Step 4: Create `consumer.py`**
 ```python
 import json, clickhouse_connect
 from datetime import datetime
@@ -648,4 +909,44 @@ for m in KafkaConsumer("air_quality", bootstrap_servers="kafka:9092", auto_offse
     m.value["event_time"] = datetime.strptime(m.value["event_time"], "%Y-%m-%d %H:%M:%S")
     ch.insert("default.air_quality", [[m.value[k] for k in cols]], column_names=cols)
     print("Inserted:", m.value, flush=True)
+```
+
+**Step 5: Start all 5 containers and verify data in ClickHouse**
+```powershell
+docker compose down -v
+docker compose up -d
+# Wait ~20 seconds, then check logs and ClickHouse rows:
+docker compose logs --tail=10 producer
+docker compose logs --tail=10 consumer
+docker compose exec clickhouse clickhouse-client --password prac123 --query "SELECT * FROM default.air_quality ORDER BY event_time DESC LIMIT 5"
+```
+
+**Verified Output:**
+```text
+2026-11-18 16:50:51	Nashik	153.77	226.3	36.3
+2026-11-18 16:50:49	Mumbai	128.7	228.31	29.14
+2026-11-18 16:50:47	Nashik	87.27	99.81	33.96
+2026-11-18 16:50:45	Nagpur	123.99	242.31	24.18
+```
+
+**Step 6: Visualize in Grafana (`http://localhost:3000`)**
+1. Login at `http://localhost:3000` with `admin` / `admin`.
+2. **Connections $\rightarrow$ Data sources $\rightarrow$ Add data source $\rightarrow$ ClickHouse**:
+   - **Server address:** `clickhouse` | **Server port:** `9000` (Native) or `8123` (HTTP)
+   - **Username:** `default` | **Password:** `prac123` | **Default database:** `default` $\rightarrow$ **Save & test**.
+3. **Dashboards $\rightarrow$ New $\rightarrow$ Add visualization $\rightarrow$ SQL Editor**:
+```sql
+SELECT
+  $__timeInterval(event_time) AS time,
+  city,
+  avg(pm25) AS pm25
+FROM default.air_quality
+WHERE $__timeFilter(event_time)
+GROUP BY time, city
+ORDER BY time
+```
+
+**Step 7: Stop containers when done**
+```powershell
+docker compose down -v
 ```
